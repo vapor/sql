@@ -173,6 +173,16 @@ final class SQLKitTests: XCTestCase {
         XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT DO NOTHING")
         XCTAssertEqual(db.results[1], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT (`id`) WHERE `id` = ? DO NOTHING")
     }
+    
+    func testUpsertWithoutConflictClause() throws {
+        let db = TestDatabase()
+        let id = UUID()
+        
+        try! XCTUnwrap(db.upsert(into: "planets").columns("id").values(id).run().wait())
+        try! XCTUnwrap(db.insert(into: "planets").columns("id").values(id).run().wait())
+        XCTAssertEqual(db.results[0], db.results[1])
+        XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?)")
+    }
 }
 
 // MARK: Table Creation
