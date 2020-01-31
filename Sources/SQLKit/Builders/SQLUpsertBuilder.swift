@@ -68,7 +68,7 @@ public final class SQLUpsertBuilder: SQLQueryBuilder {
         where predicate: ((SQLPredicateBuilder) -> SQLPredicateBuilder)? = nil
     ) -> Self {
         self.upsert.targets = targets?.map(SQLIdentifier.init)
-        self.upsert.condition = predicate?(SQLPredicateGroupBuilder()).predicate
+        self.upsert.condition = predicate?(SQLConflictPredicateBuilder()).predicate
         self.upsert.action = SQLConflictAction.nothing
         return self
     }
