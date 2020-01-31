@@ -107,6 +107,29 @@ final class SQLKitTests: XCTestCase {
         // Yes, this query is very much pure gibberish.
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` OUTER JOIN (SELECT `name` FROM `stars` WHERE `orion` = `please space`) AS `star` ON `moons`.`planet_id` IS NOT %%%%%% WHERE NULL")
     }
+    
+    func testUpsertWithUpdate() throws {
+        let db = TestDatabase()
+        
+        try db
+            .upsert(into: "planets")
+            .columns("id", "name", "galaxy_id", "type")
+            .values(UUID(), "Earth", UUID(), "rocky")
+            .onConflict(
+                with: ["galaxy_id", "id"],
+                where: { $0.where("galaxy_id", .notEqual, "special_galaxy_id") },
+                do: {
+                    $0.set("name", to: "another_planet")
+                      .set(excudedValueOf: "type")
+                      .where("type", .equal, "gas_giant")
+                }
+            )
+            .run().wait()
+        
+        XCTAssertEqual(db.results[0], """
+            INSERT INTO `planets` (`id`, `name`, `galaxy_id`, `type`) VALUES (?, ?, ?, ?) ON CONFLICT (`galaxy_id`, `id`) WHERE `galaxy_id` <> ? DO UPDATE  SET `name` = ?, `type` = `excluded`.`type` WHERE `type` = ?
+            """)
+    }
 }
 
 // MARK: Table Creation
