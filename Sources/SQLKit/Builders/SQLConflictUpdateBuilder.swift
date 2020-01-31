@@ -28,10 +28,9 @@ public final class SQLConflictUpdateBuilder: SQLQueryBuilder, SQLPredicateBuilde
     }
 
     public func set<E>(model: E) throws -> Self where E: Encodable {
-        self.update.values += try SQLUpdateBuilder(.init(table: SQLIdentifier("")), on: self.database).set(model: model).update.values
-        return self
+        return try SQLQueryEncoder().encode(model).reduce(self) { $0.set(SQLColumn($1.0), to: $1.1) }
     }
-
+    
     public func set(_ column: String, to bind: Encodable) -> Self {
         return self.set(SQLIdentifier(column), to: SQLBind(bind))
     }
@@ -45,7 +44,7 @@ public final class SQLConflictUpdateBuilder: SQLQueryBuilder, SQLPredicateBuilde
     /// Set a column to the value which would have been inserted if a conflict
     /// had not occurred. This method should only be called on update builders
     /// used for an upsert.
-    public func set(excudedValueOf column: String) -> Self {
+    public func set(excludedValueOf column: String) -> Self {
         return self.set(SQLIdentifier(column), to: SQLExcludedColumn(column))
     }
     
@@ -54,6 +53,13 @@ public final class SQLConflictUpdateBuilder: SQLQueryBuilder, SQLPredicateBuilde
     /// used for an upsert.
     public func set(excludedValueOf column: SQLExpression) -> Self {
         return self.set(column, to: SQLExcludedColumn(column))
+    }
+
+    /// Equivalent to calling `set(excludedValueOf:)` for each column the model
+    /// contains. This includes any columns that may have been involved in
+    /// triggering the conflict.
+    public func set<E>(excludedModel model: E) throws -> SQLConflictUpdateBuilder where E: Encodable {
+        return try SQLQueryEncoder().encode(model).reduce(self) { $0.set(excludedValueOf: $1.0) }
     }
 
 }

@@ -120,7 +120,7 @@ final class SQLKitTests: XCTestCase {
                 where: { $0.where("galaxy_id", .notEqual, "special_galaxy_id") },
                 do: {
                     $0.set("name", to: "another_planet")
-                      .set(excudedValueOf: "type")
+                      .set(excludedValueOf: "type")
                       .where("type", .equal, "gas_giant")
                 }
             )
@@ -129,6 +129,49 @@ final class SQLKitTests: XCTestCase {
         XCTAssertEqual(db.results[0], """
             INSERT INTO `planets` (`id`, `name`, `galaxy_id`, `type`) VALUES (?, ?, ?, ?) ON CONFLICT (`galaxy_id`, `id`) WHERE `galaxy_id` <> ? DO UPDATE  SET `name` = ?, `type` = `excluded`.`type` WHERE `type` = ?
             """)
+    }
+    
+    func testUpsertUsingExcludedModel() throws {
+        struct Foo: Codable {
+            let id: UUID
+            let foo: Int
+            let bar: Double?
+            let baz: String
+        }
+
+        let db = TestDatabase()
+        let model = Foo(id: UUID(), foo: 1, bar: 4.2, baz: "gadkf")
+        
+        try! XCTUnwrap(db
+            .upsert(into: "foos")
+            .model(model)
+            .onConflict(with: ["id"]) { try $0.set(excludedModel: model) }
+            .run().wait()
+        )
+        
+        XCTAssertEqual(db.results[0], "INSERT INTO `foos` (`id`, `foo`, `bar`, `baz`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE  SET `id` = `excluded`.`id`, `foo` = `excluded`.`foo`, `bar` = `excluded`.`bar`, `baz` = `excluded`.`baz`")
+    }
+    
+    func testUpsertWithIgnoreAction() throws {
+        let db = TestDatabase()
+        
+        try! XCTUnwrap(db
+            .upsert(into: "planets")
+            .columns("id")
+            .values(UUID())
+            .ignoreConflict()
+            .run().wait()
+        )
+        try! XCTUnwrap(db
+            .upsert(into: "planets")
+            .columns("id")
+            .values(UUID())
+            .ignoreConflict(with: ["id"], where: { $0.where(SQLColumn("id"), .equal, SQLBind(UUID())) })
+            .run().wait()
+        )
+        
+        XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT DO NOTHING")
+        XCTAssertEqual(db.results[1], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT (`id`) WHERE `id` = ? DO NOTHING")
     }
 }
 

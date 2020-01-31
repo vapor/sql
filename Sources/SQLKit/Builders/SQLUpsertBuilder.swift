@@ -29,14 +29,16 @@ public final class SQLUpsertBuilder: SQLQueryBuilder {
     }
     
     /// See `SQLInsertBuilder.model(_:)`
-    public func model<E>(_ model: E) throws -> Self
-        where E: Encodable
-    {
-        // This silly hack avoids duplicating the implementation of this method
-        // found in `SQLInsertBuilder`. There's probably a better way.
-        self.upsert.insert.values.append(
-            try SQLInsertBuilder(.init(table: SQLIdentifier("")), on: self.database).model(model).insert.values[0]
-        )
+    public func model<E>(_ model: E) throws -> Self where E: Encodable {
+        let row = try SQLQueryEncoder().encode(model)
+        
+        if self.upsert.insert.columns.isEmpty {
+            self.upsert.insert.columns = row.map { SQLColumn($0.0) }
+        } else {
+            precondition(row.count == self.upsert.insert.columns.count,
+                         "Column count \(self.upsert.insert.columns.count) does not match value count \(row.count) for \(model)")
+        }
+        self.upsert.insert.values.append(row.map { $0.1 })
         return self
     }
 
@@ -61,14 +63,24 @@ public final class SQLUpsertBuilder: SQLQueryBuilder {
         return self
     }
     
+    public func ignoreConflict(
+        with targets: [String]? = nil,
+        where predicate: ((SQLPredicateBuilder) -> SQLPredicateBuilder)? = nil
+    ) -> Self {
+        self.upsert.targets = targets?.map(SQLIdentifier.init)
+        self.upsert.condition = predicate?(SQLPredicateGroupBuilder()).predicate
+        self.upsert.action = SQLConflictAction.nothing
+        return self
+    }
+    
     public func onConflict(
         with targets: [String],
-        where predicate: ((SQLPredicateBuilder) -> SQLPredicateBuilder)? = nil,
-        `do` updatePredicate: (SQLConflictUpdateBuilder) -> SQLConflictUpdateBuilder
-    ) -> Self {
+        where predicate: ((SQLConflictPredicateBuilder) -> SQLConflictPredicateBuilder)? = nil,
+        `do` updatePredicate: (SQLConflictUpdateBuilder) throws -> SQLConflictUpdateBuilder
+    ) rethrows -> Self {
         self.upsert.targets = targets.map(SQLIdentifier.init)
-        self.upsert.condition = predicate?(SQLPredicateGroupBuilder()).predicate
-        self.upsert.action = SQLConflictAction.update(updatePredicate(.init(.init(table: SQLRaw("")), on: self.database)).update)
+        self.upsert.condition = predicate?(SQLConflictPredicateBuilder()).predicate
+        self.upsert.action = SQLConflictAction.update(try updatePredicate(.init(.init(table: SQLRaw("")), on: self.database)).update)
         return self
     }
 
