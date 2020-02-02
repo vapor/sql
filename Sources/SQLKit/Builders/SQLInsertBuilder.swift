@@ -103,7 +103,7 @@ public final class SQLInsertBuilder: SQLQueryBuilder {
     
     public func onConflict(
         with targets: [String],
-        where predicate: ((SQLConflictPredicateBuilder) -> SQLConflictPredicateBuilder)? = nil,
+        where predicate: ((SQLPredicateBuilder) -> SQLPredicateBuilder)? = nil,
         `do` updatePredicate: (SQLConflictUpdateBuilder) throws -> SQLConflictUpdateBuilder
     ) rethrows -> Self {
         var clause = SQLConflictClause(action: .update(try updatePredicate(.init(.init(table: SQLRaw("")), on: self.database)).update))
