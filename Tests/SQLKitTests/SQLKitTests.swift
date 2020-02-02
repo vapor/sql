@@ -108,11 +108,11 @@ final class SQLKitTests: XCTestCase {
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` OUTER JOIN (SELECT `name` FROM `stars` WHERE `orion` = `please space`) AS `star` ON `moons`.`planet_id` IS NOT %%%%%% WHERE NULL")
     }
     
-    func testUpsertWithUpdate() throws {
+    func testInsertWithConflictUpdate() throws {
         let db = TestDatabase()
         
         try db
-            .upsert(into: "planets")
+            .insert(into: "planets")
             .columns("id", "name", "galaxy_id", "type")
             .values(UUID(), "Earth", UUID(), "rocky")
             .onConflict(
@@ -131,7 +131,7 @@ final class SQLKitTests: XCTestCase {
             """)
     }
     
-    func testUpsertUsingExcludedModel() throws {
+    func testInsertWithConflictUpdateUsingExcludedModel() throws {
         struct Foo: Codable {
             let id: UUID
             let foo: Int
@@ -143,7 +143,7 @@ final class SQLKitTests: XCTestCase {
         let model = Foo(id: UUID(), foo: 1, bar: 4.2, baz: "gadkf")
         
         try! XCTUnwrap(db
-            .upsert(into: "foos")
+            .insert(into: "foos")
             .model(model)
             .onConflict(with: ["id"]) { try $0.set(excludedModel: model) }
             .run().wait()
@@ -152,18 +152,18 @@ final class SQLKitTests: XCTestCase {
         XCTAssertEqual(db.results[0], "INSERT INTO `foos` (`id`, `foo`, `bar`, `baz`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE  SET `id` = `excluded`.`id`, `foo` = `excluded`.`foo`, `bar` = `excluded`.`bar`, `baz` = `excluded`.`baz`")
     }
     
-    func testUpsertWithIgnoreAction() throws {
+    func testInsertWithConflictIgnore() throws {
         let db = TestDatabase()
         
         try! XCTUnwrap(db
-            .upsert(into: "planets")
+            .insert(into: "planets")
             .columns("id")
             .values(UUID())
             .ignoreConflict()
             .run().wait()
         )
         try! XCTUnwrap(db
-            .upsert(into: "planets")
+            .insert(into: "planets")
             .columns("id")
             .values(UUID())
             .ignoreConflict(with: ["id"], where: { $0.where(SQLColumn("id"), .equal, SQLBind(UUID())) })
@@ -172,16 +172,6 @@ final class SQLKitTests: XCTestCase {
         
         XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT DO NOTHING")
         XCTAssertEqual(db.results[1], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT (`id`) WHERE `id` = ? DO NOTHING")
-    }
-    
-    func testUpsertWithoutConflictClause() throws {
-        let db = TestDatabase()
-        let id = UUID()
-        
-        try! XCTUnwrap(db.upsert(into: "planets").columns("id").values(id).run().wait())
-        try! XCTUnwrap(db.insert(into: "planets").columns("id").values(id).run().wait())
-        XCTAssertEqual(db.results[0], db.results[1])
-        XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?)")
     }
 }
 

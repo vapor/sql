@@ -1,5 +1,5 @@
-/// Not intended for direct use by clients. Builds UPDATE clauses to be used in
-/// UPSERT queries.
+/// Not intended for direct use by clients. Builds UPDATE clauses tailored for
+/// use as conflict actions.
 ///
 /// - TODO: Factor out common code in this class and `SQLUpdateBuilder` instead of repeating everthing.
 public final class SQLConflictUpdateBuilder: SQLQueryBuilder, SQLPredicateBuilder {
@@ -42,15 +42,13 @@ public final class SQLConflictUpdateBuilder: SQLQueryBuilder, SQLPredicateBuilde
     }
 
     /// Set a column to the value which would have been inserted if a conflict
-    /// had not occurred. This method should only be called on update builders
-    /// used for an upsert.
+    /// had not occurred.
     public func set(excludedValueOf column: String) -> Self {
         return self.set(SQLIdentifier(column), to: SQLExcludedColumn(column))
     }
     
     /// Set a column to the value which would have been inserted if a conflict
-    /// had not occurred. This method should only be called on update builders
-    /// used for an upsert.
+    /// had not occurred.
     public func set(excludedValueOf column: SQLExpression) -> Self {
         return self.set(column, to: SQLExcludedColumn(column))
     }

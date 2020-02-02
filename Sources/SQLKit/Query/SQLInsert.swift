@@ -13,11 +13,15 @@ public struct SQLInsert: SQLExpression {
     /// Use the `DEFAULT` literal to omit a value and that is specified as a column.
     public var values: [[SQLExpression]]
     
+    /// The clause specifying conflict resolution for the INSERT, if any.
+    public var conflictClause: SQLExpression?
+    
     /// Creates a new `SQLInsert`.
     public init(table: SQLExpression) {
         self.table = table
         self.columns = []
         self.values = []
+        self.conflictClause = nil
     }
     
     public func serialize(to serializer: inout SQLSerializer) {
@@ -27,5 +31,10 @@ public struct SQLInsert: SQLExpression {
         SQLGroupExpression(self.columns).serialize(to: &serializer)
         serializer.write(" VALUES ")
         SQLList(self.values.map(SQLGroupExpression.init)).serialize(to: &serializer)
+        if let conflictClause = self.conflictClause {
+            serializer.write(" ")
+            conflictClause.serialize(to: &serializer)
+        }
     }
+
 }

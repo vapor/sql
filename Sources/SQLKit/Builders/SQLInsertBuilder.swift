@@ -88,6 +88,46 @@ public final class SQLInsertBuilder: SQLQueryBuilder {
         self.insert.values.append(values)
         return self
     }
+
+    public func ignoreConflict(
+        with targets: [String]? = nil,
+        where predicate: ((SQLPredicateBuilder) -> SQLPredicateBuilder)? = nil
+    ) -> Self {
+        var clause = SQLConflictClause(action: .nothing)
+        
+        clause.targets = targets?.map(SQLIdentifier.init)
+        clause.condition = predicate?(SQLConflictPredicateBuilder()).predicate
+        self.insert.conflictClause = clause
+        return self
+    }
+    
+    public func onConflict(
+        with targets: [String],
+        where predicate: ((SQLConflictPredicateBuilder) -> SQLConflictPredicateBuilder)? = nil,
+        `do` updatePredicate: (SQLConflictUpdateBuilder) throws -> SQLConflictUpdateBuilder
+    ) rethrows -> Self {
+        var clause = SQLConflictClause(action: .update(try updatePredicate(.init(.init(table: SQLRaw("")), on: self.database)).update))
+        
+        clause.targets = targets.map(SQLIdentifier.init)
+        clause.condition = predicate?(SQLConflictPredicateBuilder()).predicate
+        self.insert.conflictClause = clause
+        return self
+    }
+
+    public func onConflict(
+        with targets: [SQLExpression],
+        where predicate: SQLExpression? = nil,
+        update: SQLExpression
+    ) -> Self {
+        var clause = SQLConflictClause(action: .update(update))
+        
+        clause.targets = targets
+        clause.condition = predicate
+        clause.action = update
+        self.insert.conflictClause = clause
+        return self
+    }
+    
 }
 
 // MARK: Connection
