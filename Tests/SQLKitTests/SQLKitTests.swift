@@ -8,7 +8,7 @@ final class SQLKitTests: XCTestCase {
         let benchmarker = SQLBenchmarker(on: db)
         try benchmarker.run()
     }
-    
+
     func testLockingClause_forUpdate() throws {
         let db = TestDatabase()
         try db.select().column("*")
@@ -18,7 +18,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` WHERE `name` = ? FOR UPDATE")
     }
-    
+
     func testLockingClause_lockInShareMode() throws {
         let db = TestDatabase()
         try db.select().column("*")
@@ -28,7 +28,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` WHERE `name` = ? LOCK IN SHARE MODE")
     }
-    
+
     func testRawQueryStringInterpolation() throws {
         let db = TestDatabase()
         let (table, planet) = ("planets", "Earth")
@@ -39,7 +39,7 @@ final class SQLKitTests: XCTestCase {
         XCTAssertEqual(serializer.sql, "SELECT * FROM planets WHERE name = ?")
         XCTAssert(serializer.binds.first! as! String == "Earth")
     }
-    
+
     func testRawQueryStringWithNonliteral() throws {
         let db = TestDatabase()
         let (table, planet) = ("planets", "Earth")
@@ -77,21 +77,50 @@ final class SQLKitTests: XCTestCase {
         try db.drop(table: "planets").ifExists().run().wait()
         XCTAssertEqual(db.results[1], "DROP TABLE `planets`")
     }
-    
+
+    func testDistinct() throws {
+        let db = TestDatabase()
+        try db.select().column("*")
+            .from("planets")
+            .groupBy("color")
+            .having("color", .equal, "blue")
+            .distinct()
+            .run().wait()
+        XCTAssertEqual(db.results[0], "SELECT DISTINCT * FROM `planets` GROUP BY `color` HAVING `color` = ?")
+    }
+
+    func testDistinctColumns() throws {
+        let db = TestDatabase()
+        try db.select()
+            .distinct(on: "name", "color")
+            .from("planets")
+            .run().wait()
+        XCTAssertEqual(db.results[0], "SELECT DISTINCT `name`, `color` FROM `planets`")
+    }
+
+    func testDistinctExpression() throws {
+        let db = TestDatabase()
+        try db.select()
+            .column(SQLFunction("COUNT", args: SQLDistinct("name", "color")))
+            .from("planets")
+            .run().wait()
+        XCTAssertEqual(db.results[0], "SELECT COUNT(DISTINCT(`name`, `color`)) FROM `planets`")
+    }
+
     func testSimpleJoin() throws {
         let db = TestDatabase()
-        
+
         try db.select().column("*")
             .from("planets")
             .join("moons", on: "moons.planet_id=planets.id")
             .run().wait()
-        
+
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` INNER JOIN `moons` ON moons.planet_id=planets.id")
     }
-    
+
     func testMessyJoin() throws {
         let db = TestDatabase()
-        
+
         try db.select().column("*")
             .from("planets")
             .join(
@@ -103,14 +132,14 @@ final class SQLKitTests: XCTestCase {
             )
             .where(SQLLiteral.null)
             .run().wait()
-        
+
         // Yes, this query is very much pure gibberish.
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` OUTER JOIN (SELECT `name` FROM `stars` WHERE `orion` = `please space`) AS `star` ON `moons`.`planet_id` IS NOT %%%%%% WHERE NULL")
     }
-    
+
     func testInsertWithConflictUpdate() throws {
         let db = TestDatabase()
-        
+
         try db
             .insert(into: "planets")
             .columns("id", "name", "galaxy_id", "type")
@@ -125,12 +154,12 @@ final class SQLKitTests: XCTestCase {
                 }
             )
             .run().wait()
-        
+
         XCTAssertEqual(db.results[0], """
             INSERT INTO `planets` (`id`, `name`, `galaxy_id`, `type`) VALUES (?, ?, ?, ?) ON CONFLICT (`galaxy_id`, `id`) WHERE `galaxy_id` <> ? DO UPDATE  SET `name` = ?, `type` = `excluded`.`type` WHERE `type` = ?
             """)
     }
-    
+
     func testInsertWithConflictUpdateUsingExcludedModel() throws {
         struct Foo: Codable {
             let id: UUID
@@ -141,20 +170,20 @@ final class SQLKitTests: XCTestCase {
 
         let db = TestDatabase()
         let model = Foo(id: UUID(), foo: 1, bar: 4.2, baz: "gadkf")
-        
+
         try! XCTUnwrap(db
             .insert(into: "foos")
             .model(model)
             .onConflict(with: ["id"]) { try $0.set(excludedModel: model) }
             .run().wait()
         )
-        
+
         XCTAssertEqual(db.results[0], "INSERT INTO `foos` (`id`, `foo`, `bar`, `baz`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE  SET `id` = `excluded`.`id`, `foo` = `excluded`.`foo`, `bar` = `excluded`.`bar`, `baz` = `excluded`.`baz`")
     }
-    
+
     func testInsertWithConflictIgnore() throws {
         let db = TestDatabase()
-        
+
         try! XCTUnwrap(db
             .insert(into: "planets")
             .columns("id")
@@ -169,9 +198,27 @@ final class SQLKitTests: XCTestCase {
             .ignoreConflict(with: ["id"], where: { $0.where(SQLColumn("id"), .equal, SQLBind(UUID())) })
             .run().wait()
         )
-        
+
         XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT DO NOTHING")
         XCTAssertEqual(db.results[1], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT (`id`) WHERE `id` = ? DO NOTHING")
+    }
+
+    func testBinaryOperators() throws {
+        let db = TestDatabase()
+
+        try db
+            .update("planets")
+            .set(SQLIdentifier("moons"),
+                 to: SQLBinaryExpression(
+                    left: SQLIdentifier("moons"),
+                    op: SQLBinaryOperator.add,
+                    right: SQLLiteral.numeric("1")
+                )
+            )
+            .where("best_at_space", .greaterThanOrEqual, "yes")
+            .run().wait()
+
+        XCTAssertEqual(db.results[0], "UPDATE `planets` SET `moons` = `moons` + 1 WHERE `best_at_space` >= ?")
     }
 }
 
