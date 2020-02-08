@@ -10,7 +10,13 @@ public struct SQLExcludedColumn: SQLExpression {
     }
     
     public func serialize(to serializer: inout SQLSerializer) {
-        // serializer.dialect.excludedValueExpression(for: self.name).serialize(to: &serializer)
-        SQLColumn(self.name, table: SQLIdentifier("excluded")).serialize(to: &serializer)
+        switch serializer.dialect.upsertSyntax {
+            case .standard, .nonspecific:
+                SQLColumn(self.name, table: SQLIdentifier("excluded")).serialize(to: &serializer)
+            case .nonspecificWithValues:
+                SQLFunction("VALUES", args: self.name).serialize(to: &serializer)
+            case .unsupported:
+                print("WARNING: The current database driver does not support excluded column specification!")
+        }
     }
 }
