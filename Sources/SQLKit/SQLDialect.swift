@@ -9,6 +9,7 @@ public protocol SQLDialect {
     var supportsIfExists: Bool { get }
     var supportsAutoIncrement: Bool { get }
     var enumSyntax: SQLEnumSyntax { get }
+    var upsertSyntax: SQLUpsertSyntax { get }
 }
 
 public enum SQLEnumSyntax {
@@ -21,6 +22,21 @@ public enum SQLEnumSyntax {
 
     /// for ex. SQL Server, which does not have an enum syntax.
     /// - note: you can likely simulate an enum with a CHECK constraint.
+    case unsupported
+}
+
+public enum SQLUpsertSyntax {
+    /// Standard SQL, e.g. ON CONFLICT and "excluded".
+    case standard
+    
+    /// MySQL, e.g. INSERT IGNORE, ON DUPLICATE KEY UPDATE, and no
+    /// support for conflict targets or conditions. Old-style using VALUES()
+    case nonspecificWithValues
+    
+    /// MySQL, e.g. INSERT IGNORE etc. with new-style row/column aliases.
+    case nonspecific
+    
+    /// Something which can't do upserts atomically at all.
     case unsupported
 }
 
