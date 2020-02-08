@@ -7,8 +7,7 @@ public struct SQLConflictClause: SQLExpression {
     /// The conflict condition, if any.
     public var condition: SQLExpression?
 
-    /// The action to be taken upon conflicts. If `nil`, the query will behave
-    /// like a normal `INSERT`.
+    /// The action to be taken upon conflicts.
     public var action: SQLExpression
     
     /// Creates a new `SQLConflictClause`.
