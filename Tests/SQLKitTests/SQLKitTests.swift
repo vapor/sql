@@ -3,14 +3,42 @@ import SQLKitBenchmark
 import XCTest
 
 final class SQLKitTests: XCTestCase {
+    var db: TestDatabase!
+
+    override func setUp() {
+        super.setUp()
+        self.db = TestDatabase()
+    }
+
     func testBenchmarker() throws {
-        let db = TestDatabase()
         let benchmarker = SQLBenchmarker(on: db)
         try benchmarker.run()
     }
 
+    func testSelect_whereIn() throws {
+        try db.select().column("*")
+            .from("planets")
+            .where("name", .in, ["Earth", "Mars"])
+            .run().wait()
+        XCTAssertEqual(db.results[0], "SELECT * FROM `planets` WHERE `name` IN (?, ?)")
+    }
+
+    func testUpdate() throws {
+        try db.update("planets")
+            .where("name", .equal, "Jpuiter")
+            .set("name", to: "Jupiter")
+            .run().wait()
+        XCTAssertEqual(db.results[0], "UPDATE `planets` SET `name` = ? WHERE `name` = ?")
+    }
+
+    func testDelete() throws {
+        try db.delete(from: "planets")
+            .where("name", .equal, "Jupiter")
+            .run().wait()
+        XCTAssertEqual(db.results[0], "DELETE FROM `planets` WHERE `name` = ?")
+    }
+
     func testLockingClause_forUpdate() throws {
-        let db = TestDatabase()
         try db.select().column("*")
             .from("planets")
             .where("name", .equal, "Earth")
@@ -20,7 +48,6 @@ final class SQLKitTests: XCTestCase {
     }
 
     func testLockingClause_lockInShareMode() throws {
-        let db = TestDatabase()
         try db.select().column("*")
             .from("planets")
             .where("name", .equal, "Earth")
@@ -30,7 +57,6 @@ final class SQLKitTests: XCTestCase {
     }
 
     func testRawQueryStringInterpolation() throws {
-        let db = TestDatabase()
         let (table, planet) = ("planets", "Earth")
         let builder = db.raw("SELECT * FROM \(table) WHERE name = \(bind: planet)")
         var serializer = SQLSerializer(database: db)
@@ -58,7 +84,6 @@ final class SQLKitTests: XCTestCase {
     }
 
     func testGroupByHaving() throws {
-        let db = TestDatabase()
         try db.select().column("*")
             .from("planets")
             .groupBy("color")
@@ -68,14 +93,94 @@ final class SQLKitTests: XCTestCase {
     }
 
     func testIfExists() throws {
-        let db = TestDatabase()
-
         try db.drop(table: "planets").ifExists().run().wait()
         XCTAssertEqual(db.results[0], "DROP TABLE IF EXISTS `planets`")
 
         db._dialect.supportsIfExists = false
         try db.drop(table: "planets").ifExists().run().wait()
         XCTAssertEqual(db.results[1], "DROP TABLE `planets`")
+    }
+
+    func testDropBehavior() throws {
+        let db = TestDatabase()
+
+        try db.drop(table: "planets").run().wait()
+        XCTAssertEqual(db.results[0], "DROP TABLE `planets`")
+
+        try db.drop(table: "planets").behavior(.cascade).run().wait()
+        XCTAssertEqual(db.results[1], "DROP TABLE `planets`")
+
+        try db.drop(table: "planets").behavior(.restrict).run().wait()
+        XCTAssertEqual(db.results[2], "DROP TABLE `planets`")
+
+        try db.drop(table: "planets").cascade().run().wait()
+        XCTAssertEqual(db.results[3], "DROP TABLE `planets`")
+
+        try db.drop(table: "planets").restrict().run().wait()
+        XCTAssertEqual(db.results[4], "DROP TABLE `planets`")
+
+        db._dialect.supportsDropBehavior = true
+        try db.drop(table: "planets").run().wait()
+        XCTAssertEqual(db.results[5], "DROP TABLE `planets` RESTRICT")
+
+        try db.drop(table: "planets").behavior(.cascade).run().wait()
+        XCTAssertEqual(db.results[6], "DROP TABLE `planets` CASCADE")
+
+        try db.drop(table: "planets").behavior(.restrict).run().wait()
+        XCTAssertEqual(db.results[7], "DROP TABLE `planets` RESTRICT")
+
+        try db.drop(table: "planets").cascade().run().wait()
+        XCTAssertEqual(db.results[8], "DROP TABLE `planets` CASCADE")
+
+        try db.drop(table: "planets").restrict().run().wait()
+        XCTAssertEqual(db.results[9], "DROP TABLE `planets` RESTRICT")
+    }
+
+    func testAltering() throws {
+        let db = TestDatabase()
+
+        // SINGLE
+        try db.alter(table: "alterable")
+            .column("hello", type: .text)
+            .run().wait()
+        XCTAssertEqual(db.results[0], "ALTER TABLE `alterable` ADD `hello` TEXT")
+
+        try db.alter(table: "alterable")
+            .dropColumn("hello")
+            .run().wait()
+        XCTAssertEqual(db.results[1], "ALTER TABLE `alterable` DROP `hello`")
+
+        try db.alter(table: "alterable")
+            .modifyColumn("hello", type: .text)
+            .run().wait()
+        XCTAssertEqual(db.results[2], "ALTER TABLE `alterable` MODIFY `hello` TEXT")
+
+        // BATCH
+        try db.alter(table: "alterable")
+            .column("hello", type: .text)
+            .column("there", type: .text)
+            .run().wait()
+        XCTAssertEqual(db.results[3], "ALTER TABLE `alterable` ADD `hello` TEXT , ADD `there` TEXT")
+
+        try db.alter(table: "alterable")
+            .dropColumn("hello")
+            .dropColumn("there")
+            .run().wait()
+        XCTAssertEqual(db.results[4], "ALTER TABLE `alterable` DROP `hello` , DROP `there`")
+
+        try db.alter(table: "alterable")
+            .update(column: "hello", type: .text)
+            .update(column: "there", type: .text)
+            .run().wait()
+        XCTAssertEqual(db.results[5], "ALTER TABLE `alterable` MODIFY `hello` TEXT , MODIFY `there` TEXT")
+
+        // MIXED
+        try db.alter(table: "alterable")
+            .column("hello", type: .text)
+            .dropColumn("there")
+            .update(column: "again", type: .text)
+            .run().wait()
+        XCTAssertEqual(db.results[6], "ALTER TABLE `alterable` ADD `hello` TEXT , DROP `there` , MODIFY `again` TEXT")
     }
 
     func testDistinct() throws {
@@ -226,8 +331,6 @@ final class SQLKitTests: XCTestCase {
 
 extension SQLKitTests {
     func testColumnConstraints() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets")
             .column("id", type: .bigint, .primaryKey)
             .column("name", type: .text, .default("unnamed"))
@@ -246,9 +349,15 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
                        )
     }
 
-    func testMultipleColumnConstraintsPerRow() throws {
-        let db = TestDatabase()
+    func testConstraintLengthNormalization() {
+        // Default impl is to leave as-is
+        XCTAssertEqual(
+            (db.dialect.normalizeSQLConstraint(identifier: SQLIdentifier("fk:obnoxiously_long_table_name.other_table_name_id+other_table_name.id")) as! SQLIdentifier).string,
+            SQLIdentifier("fk:obnoxiously_long_table_name.other_table_name_id+other_table_name.id").string
+        )
+    }
 
+    func testMultipleColumnConstraintsPerRow() throws {
         try db.create(table: "planets")
             .column("id", type: .bigint, .notNull, .primaryKey)
             .run().wait()
@@ -257,8 +366,6 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
     }
 
     func testPrimaryKeyColumnConstraintVariants() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets1")
             .column("id", type: .bigint, .primaryKey)
             .run().wait()
@@ -272,9 +379,54 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
         XCTAssertEqual(db.results[1], "CREATE TABLE `planets2`(`id` BIGINT PRIMARY KEY)")
     }
 
-    func testDefaultColumnConstraintVariants() throws {
+    func testPrimaryKeyAutoIncrementVariants() throws {
         let db = TestDatabase()
 
+        db._dialect.supportsAutoIncrement = false
+
+        try db.create(table: "planets1")
+            .column("id", type: .bigint, .primaryKey)
+            .run().wait()
+
+        try db.create(table: "planets2")
+            .column("id", type: .bigint, .primaryKey(autoIncrement: false))
+            .run().wait()
+
+        db._dialect.supportsAutoIncrement = true
+
+        try db.create(table: "planets3")
+            .column("id", type: .bigint, .primaryKey)
+            .run().wait()
+
+        try db.create(table: "planets4")
+            .column("id", type: .bigint, .primaryKey(autoIncrement: false))
+            .run().wait()
+
+        db._dialect.supportsAutoIncrement = true
+        db._dialect.autoIncrementFunction = SQLRaw("NEXTUNIQUE")
+
+        try db.create(table: "planets5")
+            .column("id", type: .bigint, .primaryKey)
+            .run().wait()
+
+        try db.create(table: "planets6")
+            .column("id", type: .bigint, .primaryKey(autoIncrement: false))
+            .run().wait()
+
+        XCTAssertEqual(db.results[0], "CREATE TABLE `planets1`(`id` BIGINT PRIMARY KEY)")
+
+        XCTAssertEqual(db.results[1], "CREATE TABLE `planets2`(`id` BIGINT PRIMARY KEY)")
+
+        XCTAssertEqual(db.results[2], "CREATE TABLE `planets3`(`id` BIGINT PRIMARY KEY AUTOINCREMENT)")
+
+        XCTAssertEqual(db.results[3], "CREATE TABLE `planets4`(`id` BIGINT PRIMARY KEY)")
+
+        XCTAssertEqual(db.results[4], "CREATE TABLE `planets5`(`id` BIGINT DEFAULT NEXTUNIQUE PRIMARY KEY)")
+
+        XCTAssertEqual(db.results[5], "CREATE TABLE `planets6`(`id` BIGINT PRIMARY KEY)")
+    }
+
+    func testDefaultColumnConstraintVariants() throws {
         try db.create(table: "planets1")
             .column("name", type: .text, .default("unnamed"))
             .run().wait()
@@ -307,8 +459,6 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
     }
 
     func testForeignKeyColumnConstraintVariants() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets1")
             .column("galaxy_id", type: .bigint, .references("galaxies", "id"))
             .run().wait()
@@ -323,8 +473,6 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
     }
 
     func testTableConstraints() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets")
             .column("id", type: .bigint)
             .column("name", type: .text)
@@ -348,8 +496,6 @@ CREATE TABLE `planets`(`id` BIGINT, `name` TEXT, `diameter` INTEGER, `galaxy_nam
     }
 
     func testCompositePrimaryKeyTableConstraint() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets1")
             .column("id1", type: .bigint)
             .column("id2", type: .bigint)
@@ -360,8 +506,6 @@ CREATE TABLE `planets`(`id` BIGINT, `name` TEXT, `diameter` INTEGER, `galaxy_nam
     }
 
     func testCompositeUniqueTableConstraint() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets1")
             .column("id1", type: .bigint)
             .column("id2", type: .bigint)
@@ -372,8 +516,6 @@ CREATE TABLE `planets`(`id` BIGINT, `name` TEXT, `diameter` INTEGER, `galaxy_nam
     }
 
     func testPrimaryKeyTableConstraintVariants() throws {
-        let db = TestDatabase()
-
         try db.create(table: "planets1")
             .column("galaxy_name", type: .text)
             .column("galaxy_id", type: .bigint)
@@ -414,6 +556,15 @@ CREATE TABLE `planets`(`id` BIGINT, `name` TEXT, `diameter` INTEGER, `galaxy_nam
             let foo: Int
             let bar: Double?
             let baz: String
+            let waldoFred: Int?
+        }
+
+        struct FooWithForeignKey: Codable {
+            let id: UUID
+            let foo: Int
+            let bar: Double?
+            let baz: String
+            let waldoFredID: Int
         }
 
         do {
@@ -421,26 +572,96 @@ CREATE TABLE `planets`(`id` BIGINT, `name` TEXT, `diameter` INTEGER, `galaxy_nam
                 "id": UUID(),
                 "foo": 42,
                 "bar": Double?.none as Any,
-                "baz": "vapor"
+                "baz": "vapor",
+                "waldoFred": 2015
             ])
 
             let foo = try row.decode(model: Foo.self)
             XCTAssertEqual(foo.foo, 42)
             XCTAssertEqual(foo.bar, nil)
             XCTAssertEqual(foo.baz, "vapor")
+            XCTAssertEqual(foo.waldoFred, 2015)
+        } catch {
+            XCTFail("Could not decode row \(error)")
         }
         do {
             let row = TestRow(data: [
                 "foos_id": UUID(),
                 "foos_foo": 42,
                 "foos_bar": Double?.none as Any,
-                "foos_baz": "vapor"
+                "foos_baz": "vapor",
+                "foos_waldoFred": 2015
             ])
 
             let foo = try row.decode(model: Foo.self, prefix: "foos_")
             XCTAssertEqual(foo.foo, 42)
             XCTAssertEqual(foo.bar, nil)
             XCTAssertEqual(foo.baz, "vapor")
+            XCTAssertEqual(foo.waldoFred, 2015)
+        } catch {
+            XCTFail("Could not decode row with prefix \(error)")
+        }
+        do {
+            let row = TestRow(data: [
+                "id": UUID(),
+                "foo": 42,
+                "bar": Double?.none as Any,
+                "baz": "vapor",
+                "waldo_fred": 2015
+            ])
+
+            let foo = try row.decode(model: Foo.self, keyDecodingStrategy: .convertFromSnakeCase)
+            XCTAssertEqual(foo.foo, 42)
+            XCTAssertEqual(foo.bar, nil)
+            XCTAssertEqual(foo.baz, "vapor")
+            XCTAssertEqual(foo.waldoFred, 2015)
+        } catch {
+            XCTFail("Could not decode row with keyDecodingStrategy \(error)")
+        }
+        do {
+            let row = TestRow(data: [
+                "id": UUID(),
+                "foo": 42,
+                "bar": Double?.none as Any,
+                "baz": "vapor",
+                "waldoFredID": 2015
+            ])
+
+            /// An implementation of CodingKey that's useful for combining and transforming keys as strings.
+            struct AnyKey: CodingKey {
+                var stringValue: String
+                var intValue: Int?
+
+                init?(stringValue: String) {
+                    self.stringValue = stringValue
+                    self.intValue = nil
+                }
+
+                init?(intValue: Int) {
+                    self.stringValue = String(intValue)
+                    self.intValue = intValue
+                }
+            }
+
+            func decodeIdToID(_ keys: [CodingKey]) -> CodingKey {
+                let key = keys.last!
+                let keyString = key.stringValue
+                if keyString.hasSuffix("Id") {
+                    var transformedKeyStringValue = keyString
+                    transformedKeyStringValue.removeLast(2)
+                    transformedKeyStringValue.append("ID")
+                    return AnyKey(stringValue: transformedKeyStringValue)!
+                }
+                return key
+            }
+
+            let foo = try row.decode(model: FooWithForeignKey.self, keyDecodingStrategy: .custom(decodeIdToID))
+            XCTAssertEqual(foo.foo, 42)
+            XCTAssertEqual(foo.bar, nil)
+            XCTAssertEqual(foo.baz, "vapor")
+            XCTAssertEqual(foo.waldoFredID, 2015)
+        } catch {
+            XCTFail("Could not decode row with keyDecodingStrategy \(error)")
         }
     }
 }

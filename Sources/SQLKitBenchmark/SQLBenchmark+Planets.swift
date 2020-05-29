@@ -26,6 +26,7 @@ extension SQLBenchmarker {
             .column("id")
             .unique()
             .run().wait()
+
         // INSERT INTO "galaxies" ("id", "name") VALUES (DEFAULT, $1)
         try self.db.insert(into: "galaxies")
             .columns("id", "name")
@@ -77,60 +78,24 @@ extension SQLBenchmarker {
             .from("planets")
             .where("galaxyID", .equal, SQLBind(5))
             .run().wait()
+
+        // add columns for the sake of testing adding columns
+        try self.db.alter(table: "planets")
+            .column("extra", type: .int)
+            .run().wait()
+
+        if self.db.dialect.alterTableSyntax.allowsBatch {
+            try self.db.alter(table: "planets")
+                .column("very_extra", type: .bigint)
+                .column("extra_extra", type: .text)
+                .run().wait()
+
+            // drop, add, and modify columns
+            try self.db.alter(table: "planets")
+                .dropColumn("extra_extra")
+                .update(column: "extra", type: .text)
+                .column("hi", type: .text)
+                .run().wait()
+        }
     }
 }
-
-//import XCTest
-//
-//extension SQLBenchmarker {
-//    internal func testPlanets() throws {
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//        try self.db.select()
-//            .column(.coalesce(.sum("id"), 0), as: "id_sum")
-//            .from("planets")
-//            .where("galaxyID", .equal, 5_000_000)
-//            .run().wait()
-//
-//        try self.db.update("planets")
-//            .where("name", .equal, .bind("Jpuiter"))
-//            .set(["name": "Jupiter"])
-//            .run().wait()
-//
-//        let selectC = try self.db.select()
-//            .column(.all)
-//            .from("planets")
-//            .join("galaxyID", to: .column(name: "id", table: "galaxies"))
-//            .all().wait().map {
-//                try (
-//                    $0.decode(Galaxy.self, table: "galaxies"),
-//                    $0.decode(Planet.self, table: "planets")
-//                )
-//            }
-//        XCTAssertEqual(selectC.count, 6)
-//
-//        try self.db.update("galaxies")
-//            .set("name", to: .bind("Milky Way 2"))
-//            .where("name", .equal, .bind("Milky Way"))
-//            .run().wait()
-//
-//        try self.db.delete(from: "galaxies")
-//            .where("name", .equal, .bind("Milky Way"))
-//            .run().wait()
-//
-//        let b = try self.db.select()
-//            .column(.count(.all), as: "c")
-//            .from("galaxies")
-//            .all().wait()
-//        XCTAssertEqual(b.count, 1)
-//    }
-//}

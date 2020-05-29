@@ -7,6 +7,7 @@ public struct SQLConstraint: SQLExpression {
 
     /// Algorithm. See `SQLTableConstraintAlgorithm`
     /// and `SQLColumnConstraintAlgorithm`
+    /// TODO: Make optional.
     public var algorithm: SQLExpression
 
     public init(algorithm: SQLExpression, name: SQLExpression? = nil) {
@@ -17,7 +18,8 @@ public struct SQLConstraint: SQLExpression {
     public func serialize(to serializer: inout SQLSerializer) {
         if let name = self.name {
             serializer.write("CONSTRAINT ")
-            name.serialize(to: &serializer)
+            let normalizedName = serializer.dialect.normalizeSQLConstraint(identifier: name)
+            normalizedName.serialize(to: &serializer)
             serializer.write(" ")
         }
         self.algorithm.serialize(to: &serializer)

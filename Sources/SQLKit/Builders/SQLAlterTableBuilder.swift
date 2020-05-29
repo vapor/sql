@@ -2,25 +2,18 @@ public final class SQLAlterTableBuilder: SQLQueryBuilder {
     /// `SQLAlterTable` query being built.
     public var alterTable: SQLAlterTable
 
-    /// See `SQLQueryBuilder`.
     public var database: SQLDatabase
 
-    /// See `SQLQueryBuilder`.
     public var query: SQLExpression {
         return self.alterTable
     }
-    
-    /// See `SQLColumnBuilder`.
+
     public var columns: [SQLExpression] {
         get { return alterTable.addColumns }
         set { alterTable.addColumns = newValue }
     }
 
     /// Creates a new `SQLAlterTableBuilder`.
-    ///
-    /// - parameters:
-    ///     - alterTable: Alter table query.
-    ///     - connection: Connection to perform query on.
     public init(_ alterTable: SQLAlterTable, on database: SQLDatabase) {
         self.alterTable = alterTable
         self.database = database
@@ -127,6 +120,26 @@ public final class SQLAlterTableBuilder: SQLQueryBuilder {
         ))
     }
 
+    public func update(
+        column: String,
+        type dataType: SQLDataType
+    ) -> Self {
+        self.modifyColumn(SQLAlterColumnDefinitionType(
+            column: SQLIdentifier(column),
+            dataType: dataType
+        ))
+    }
+
+    public func update(
+        column: SQLExpression,
+        type dataType: SQLExpression
+    ) -> Self {
+        self.modifyColumn(SQLAlterColumnDefinitionType(
+            column: column,
+            dataType: dataType
+        ))
+    }
+
     public func modifyColumn(_ columnDefinition: SQLExpression) -> Self {
         self.alterTable.modifyColumns.append(columnDefinition)
         return self
@@ -152,7 +165,7 @@ public final class SQLAlterTableBuilder: SQLQueryBuilder {
 extension SQLDatabase {
     /// Creates a new `SQLAlterTableBuilder`.
     ///
-    ///     conn.alter(table: "planets")...
+    ///     db.alter(table: "planets")...
     ///
     /// - parameters:
     ///     - table: Table to alter.
