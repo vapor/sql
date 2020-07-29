@@ -4,7 +4,7 @@
 ///         .value(earth).run()
 ///
 /// See `SQLQueryBuilder` for more information.
-public final class SQLInsertBuilder: SQLQueryBuilder {
+public final class SQLInsertBuilder: SQLQueryBuilder, SQLReturningBuilder {
     /// `Insert` query being built.
     public var insert: SQLInsert
     
@@ -14,6 +14,11 @@ public final class SQLInsertBuilder: SQLQueryBuilder {
     /// See `SQLQueryBuilder`.
     public var query: SQLExpression {
         return self.insert
+    }
+
+    public var returning: SQLReturning? {
+        get { return self.insert.returning }
+        set { self.insert.returning = newValue }
     }
     
     /// Creates a new `SQLInsertBuilder`.
@@ -105,7 +110,7 @@ public final class SQLInsertBuilder: SQLQueryBuilder {
     ) -> Self {
         var clause = SQLConflictClause(action: .nothing)
         
-        clause.targets = targets?.map(SQLIdentifier.init)
+        clause.targets = targets?.map(SQLIdentifier.init(_:))
         clause.condition = predicate?(SQLConflictPredicateBuilder()).predicate
         self.insert.conflictClause = clause
         return self
@@ -118,7 +123,7 @@ public final class SQLInsertBuilder: SQLQueryBuilder {
     ) rethrows -> Self {
         var clause = SQLConflictClause(action: .update(try updatePredicate(.init(.init(table: SQLRaw("")), on: self.database)).update))
         
-        clause.targets = targets.map(SQLIdentifier.init)
+        clause.targets = targets.map(SQLIdentifier.init(_:))
         clause.condition = predicate?(SQLConflictPredicateBuilder()).predicate
         self.insert.conflictClause = clause
         return self
