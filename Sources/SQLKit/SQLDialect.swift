@@ -10,6 +10,7 @@ public protocol SQLDialect {
     var supportsAutoIncrement: Bool { get }
     var autoIncrementFunction: SQLExpression? { get }
     var enumSyntax: SQLEnumSyntax { get }
+    var upsertSyntax: SQLUpsertSyntax { get }
     var supportsDropBehavior: Bool { get }
     var supportsReturning: Bool { get }
     var triggerSyntax: SQLTriggerSyntax { get }
@@ -74,6 +75,21 @@ public enum SQLEnumSyntax {
     case unsupported
 }
 
+public enum SQLUpsertSyntax {
+    /// Standard SQL, e.g. ON CONFLICT and "excluded".
+    case standard
+
+    /// MySQL, e.g. INSERT IGNORE, ON DUPLICATE KEY UPDATE, and no
+    /// support for conflict targets or conditions. Old-style using VALUES()
+    case nonspecificWithValues
+
+    /// MySQL, e.g. INSERT IGNORE etc. with new-style row/column aliases.
+    case nonspecific
+
+    /// Something which can't do upserts atomically at all.
+    case unsupported
+}
+
 public struct SQLTriggerSyntax {
     public struct Create: OptionSet {
         public var rawValue = 0
@@ -132,6 +148,10 @@ extension SQLDialect {
         return nil
     }
 
+    public var upsertSyntax: SQLUpsertSyntax {
+        return .unsupported
+    }
+
     public var supportsDropBehavior: Bool {
         return false
     }
@@ -143,7 +163,7 @@ extension SQLDialect {
     public var triggerSyntax: SQLTriggerSyntax {
         return SQLTriggerSyntax()
     }
-    
+
     public func normalizeSQLConstraint(identifier: SQLExpression) -> SQLExpression {
         return identifier
     }

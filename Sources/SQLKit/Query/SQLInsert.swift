@@ -16,11 +16,15 @@ public struct SQLInsert: SQLExpression {
     /// Optionally append a `RETURNING` clause that, where supported, returns the supplied supplied columns.
     public var returning: SQLReturning?
     
+    /// The clause specifying conflict resolution for the INSERT, if any.
+    public var conflictClause: SQLExpression?
+    
     /// Creates a new `SQLInsert`.
     public init(table: SQLExpression) {
         self.table = table
         self.columns = []
         self.values = []
+        self.conflictClause = nil
     }
     
     public func serialize(to serializer: inout SQLSerializer) {
@@ -30,6 +34,9 @@ public struct SQLInsert: SQLExpression {
             $0.append(SQLGroupExpression(self.columns))
             $0.append("VALUES")
             $0.append(SQLList(self.values.map(SQLGroupExpression.init)))
+            if let conflictClause = self.conflictClause {
+                $0.append(conflictClause)
+            }
             if let returning = self.returning {
                 $0.append(returning)
             }

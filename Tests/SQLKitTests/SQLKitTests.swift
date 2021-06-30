@@ -53,7 +53,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "DELETE FROM `planets` WHERE `name` = ?")
     }
-    
+
     func testLockingClause_forUpdate() throws {
         try db.select().column("*")
             .from("planets")
@@ -62,7 +62,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` WHERE `name` = ? FOR UPDATE")
     }
-    
+
     func testLockingClause_lockInShareMode() throws {
         try db.select().column("*")
             .from("planets")
@@ -71,7 +71,34 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` WHERE `name` = ? LOCK IN SHARE MODE")
     }
-    
+
+    func testRawQueryStringInterpolation() throws {
+        let (table, planet) = ("planets", "Earth")
+        let builder = db.raw("SELECT * FROM \(raw: table) WHERE name = \(bind: planet)")
+        var serializer = SQLSerializer(database: db)
+        builder.query.serialize(to: &serializer)
+
+        XCTAssertEqual(serializer.sql, "SELECT * FROM planets WHERE name = ?")
+        XCTAssert(serializer.binds.first! as! String == "Earth")
+    }
+
+    func testRawQueryStringWithNonliteral() throws {
+        let db = TestDatabase()
+        let (table, planet) = ("planets", "Earth")
+
+        var serializer1 = SQLSerializer(database: db)
+        let query1 = "SELECT * FROM \(table) WHERE name = \(planet)"
+        let builder1 = db.raw(.init(query1))
+        builder1.query.serialize(to: &serializer1)
+        XCTAssertEqual(serializer1.sql, "SELECT * FROM planets WHERE name = Earth")
+
+        var serializer2 = SQLSerializer(database: db)
+        let query2: Substring = "|||SELECT * FROM staticTable WHERE name = uselessUnboundValue|||".dropFirst(3).dropLast(3)
+        let builder2 = db.raw(.init(query2))
+        builder2.query.serialize(to: &serializer2)
+        XCTAssertEqual(serializer2.sql, "SELECT * FROM staticTable WHERE name = uselessUnboundValue")
+    }
+
     func testGroupByHaving() throws {
         try db.select().column("*")
             .from("planets")
@@ -205,7 +232,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[6], "ALTER TABLE `alterable` ADD `hello` TEXT , DROP `there` , MODIFY `again` TEXT")
     }
-    
+
     func testDistinct() throws {
         try db.select().column("*")
             .from("planets")
@@ -215,7 +242,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT DISTINCT * FROM `planets` GROUP BY `color` HAVING `color` = ?")
     }
-    
+
     func testDistinctColumns() throws {
         try db.select()
             .distinct(on: "name", "color")
@@ -223,7 +250,7 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT DISTINCT `name`, `color` FROM `planets`")
     }
-    
+
     func testDistinctExpression() throws {
         try db.select()
             .column(SQLFunction("COUNT", args: SQLDistinct("name", "color")))
@@ -231,17 +258,19 @@ final class SQLKitTests: XCTestCase {
             .run().wait()
         XCTAssertEqual(db.results[0], "SELECT COUNT(DISTINCT(`name`, `color`)) FROM `planets`")
     }
-    
+
     func testSimpleJoin() throws {
+        let db = TestDatabase()
         try db.select().column("*")
             .from("planets")
             .join("moons", on: "moons.planet_id=planets.id")
             .run().wait()
-        
+
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` INNER JOIN `moons` ON moons.planet_id=planets.id")
     }
-    
+
     func testMessyJoin() throws {
+        let db = TestDatabase()
         try db.select().column("*")
             .from("planets")
             .join(
@@ -253,12 +282,79 @@ final class SQLKitTests: XCTestCase {
             )
             .where(SQLLiteral.null)
             .run().wait()
-        
+
         // Yes, this query is very much pure gibberish.
         XCTAssertEqual(db.results[0], "SELECT * FROM `planets` OUTER JOIN (SELECT `name` FROM `stars` WHERE `orion` = `please space`) AS `star` ON `moons`.`planet_id` IS NOT %%%%%% WHERE NULL")
     }
-    
+
+    func testInsertWithConflictUpdate() throws {
+        let db = TestDatabase()
+
+        try db
+            .insert(into: "planets")
+            .columns("id", "name", "galaxy_id", "type")
+            .values(UUID(), "Earth", UUID(), "rocky")
+            .onConflict(
+                with: ["galaxy_id", "id"],
+                where: { $0.where("galaxy_id", .notEqual, "special_galaxy_id") },
+                do: {
+                    $0.set("name", to: "another_planet")
+                      .set(excludedValueOf: "type")
+                      .where("type", .equal, "gas_giant")
+                }
+            )
+            .run().wait()
+
+        XCTAssertEqual(db.results[0], """
+            INSERT INTO `planets` (`id`, `name`, `galaxy_id`, `type`) VALUES (?, ?, ?, ?) ON CONFLICT (`galaxy_id`, `id`) WHERE `galaxy_id` <> ? DO UPDATE  SET `name` = ?, `type` = `excluded`.`type` WHERE `type` = ?
+            """)
+    }
+
+    func testInsertWithConflictUpdateUsingExcludedModel() throws {
+        struct Foo: Codable {
+            let id: UUID
+            let foo: Int
+            let bar: Double?
+            let baz: String
+        }
+
+        let db = TestDatabase()
+        let model = Foo(id: UUID(), foo: 1, bar: 4.2, baz: "gadkf")
+
+        try! XCTUnwrap(db
+            .insert(into: "foos")
+            .model(model)
+            .onConflict(with: ["id"]) { try $0.set(excludedModel: model) }
+            .run().wait()
+        )
+
+        XCTAssertEqual(db.results[0], "INSERT INTO `foos` (`id`, `foo`, `bar`, `baz`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE  SET `id` = `excluded`.`id`, `foo` = `excluded`.`foo`, `bar` = `excluded`.`bar`, `baz` = `excluded`.`baz`")
+    }
+
+    func testInsertWithConflictIgnore() throws {
+        let db = TestDatabase()
+
+        try! XCTUnwrap(db
+            .insert(into: "planets")
+            .columns("id")
+            .values(UUID())
+            .ignoreConflict()
+            .run().wait()
+        )
+        try! XCTUnwrap(db
+            .insert(into: "planets")
+            .columns("id")
+            .values(UUID())
+            .ignoreConflict(with: ["id"], where: { $0.where(SQLColumn("id"), .equal, SQLBind(UUID())) })
+            .run().wait()
+        )
+
+        XCTAssertEqual(db.results[0], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT DO NOTHING")
+        XCTAssertEqual(db.results[1], "INSERT INTO `planets` (`id`) VALUES (?) ON CONFLICT (`id`) WHERE `id` = ? DO NOTHING")
+    }
+
     func testBinaryOperators() throws {
+        let db = TestDatabase()
         try db
             .update("planets")
             .set(SQLIdentifier("moons"),
@@ -270,7 +366,7 @@ final class SQLKitTests: XCTestCase {
             )
             .where("best_at_space", .greaterThanOrEqual, "yes")
             .run().wait()
-        
+
         XCTAssertEqual(db.results[0], "UPDATE `planets` SET `moons` = `moons` + 1 WHERE `best_at_space` >= ?")
     }
 
@@ -372,7 +468,7 @@ CREATE TABLE `planets`(`id` BIGINT PRIMARY KEY AUTOINCREMENT, `name` TEXT DEFAUL
 """
                        )
     }
-    
+
     func testConstraintLengthNormalization() {
         // Default impl is to leave as-is
         XCTAssertEqual(

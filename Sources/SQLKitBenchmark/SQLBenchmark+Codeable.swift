@@ -36,12 +36,12 @@ extension SQLBenchmarker {
 }
 
 fileprivate struct Planet: Codable {
-    let id: Int? = nil
+    var id: Int? = nil
     let name: String
     let isInhabited: Bool
 }
 
 fileprivate struct Galaxy: Codable {
-    let id: Int? = nil
+    var id: Int? = nil
     let name: String
 }

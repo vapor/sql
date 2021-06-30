@@ -89,7 +89,7 @@ extension SQLBenchmarker {
 
 
 private struct Planet: Codable {
-    let id: Int? = nil
+    var id: Int? = nil
     let name: String
     let type: PlanetType
 }
